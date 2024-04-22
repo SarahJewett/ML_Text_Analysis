@@ -1,0 +1,309 @@
+---
+title: "Biljana Plavsic Analysis"
+author: "Sarah Lynn Jewett"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidytext)
+library(dplyr)
+library(tidyr)
+library(readtext)
+library(quanteda)
+library(stringr)
+library(stringi)
+```
+
+# Reading in the folder of DOC files
+```{r, echo=FALSE}
+plav_text <- readtext(paste0("/Users/sarahjewett/Library/Mobile Documents/com~apple~CloudDocs/UPENN/ML_Text_Analysis/Plavsic_Biljana/*.doc"),
+                       docvarsfrom = "filenames", 
+                       dvsep = "_",
+                       docvarnames = c("first", "last", "year", "month", "day", "type", "case"),
+                       ignore_missing_files = TRUE)
+
+plav_text$text[1]
+```
+A quick review of corpus and tokenization, as well as a peek as to what the does to the Plavsic documents. 
+
+```{r}
+corp_plav <-corpus(plav_text)
+print(as.character((corp_plav[1])))
+
+token_plav <- tokens(corp_plav)
+print(as.character(token_plav["Biljana_Plavsic_2001_01_11_Initial Appearance_IT-00-40-I.doc"]))
+```
+
+
+## Cleaning the Texts
+
+Importing PDFs usually comes with lots of issues, like /n to indicate the end of a line. Or as you can see from the pdf, there are line numbers and headers/footers that read in for **every** page without concern for the text itself, which leads to sentences being split up. This isn't a big deal, except that in this case, I want to get rid of page numbers, but not all numbers in the corpus. I can use these line breaks to isolate out the line numbers. 
+```{r, echo=FALSE}
+# rid of \n##
+plav_text$text <- gsub("\n[0-9]{2}", " ", plav_text$text)
+plav_text$text[1]
+
+# rid of \n  ##
+plav_text$text <- gsub("\n  [0-9]", " ", plav_text$text)
+plav_text$text[1]
+
+# rid of \n
+plav_text$text <- gsub("\n", " ", plav_text$text)
+plav_text$text[1]
+
+# rid of line numbers
+plav_text$text <- gsub("[0-9]{1,2}  ", " ", plav_text$text)
+plav_text$text[1]
+plav_text$text <- gsub("[[:space:]]+", " ", plav_text$text)
+plav_text$text[1]
+plav_text$text <- gsub("!", "", plav_text$text)
+plav_text$text[1]
+
+# rid of "Blank page inserted to ensure pagination corresponds between the French and the English transcripts."
+plav_text$text <- gsub("Blank page inserted to ensure pagination corresponds between the French and the English transcripts.", "", plav_text$text)
+```
+
+Extract the trial ID:
+
+Starts with "IT-"
+Followed by exactly 2 digits (0-9)
+Followed by a "-" character
+Followed by exactly 2 digits (0-9)
+Optionally followed by either:
+'/' and a single digit (0-9)
+or '-' and any uppercase letter (A-Z)
+```{r}
+stri_extract_first(regex="IT-[0-9]{2}-[0-9]{2}(/[0-9]|-[A-Z])?", plav_text$text)
+```
+
+So here we see that there are two different trial ID's mentioned. 
+
+# Fully redacted documents to be replaced with single word 'REDACTED' to keep the record but not muddy up the text 
+```{r, echo=FALSE}
+
+# 2
+cat(plav_text$text[2])
+plav_text$text[2] <-gsub(".", "", plav_text$text[2])
+plav_text$text[2] <-gsub("", "REDACTED", plav_text$text[2])
+cat(plav_text$text[2])
+
+# 3
+cat(plav_text$text[3])
+plav_text$text[3] <-gsub(".", "", plav_text$text[3])
+plav_text$text[3] <-gsub("", "REDACTED", plav_text$text[3])
+cat(plav_text$text[3])
+
+# 12
+cat(plav_text$text[12])
+plav_text$text[12] <-gsub(".", "", plav_text$text[12])
+plav_text$text[12] <-gsub("", "REDACTED", plav_text$text[12])
+cat(plav_text$text[12])
+
+# 
+cat(plav_text$text[19])
+plav_text$text[19] <-gsub(".", "", plav_text$text[19])
+plav_text$text[19] <-gsub("", "REDACTED", plav_text$text[19])
+cat(plav_text$text[19])
+
+```
+
+# Need to rename Q: and A: to the proper parties involved.
+```{r}
+# First thing is to find out how many witnesses there are... WITNESS: followed by UPPER CASE NAME is the pattern here.
+
+stri_extract_all(regex="WITNESS:[:BLANK:]+[:upper:]+ [:upper:]+ ?[:upper:]{2,}", plav_text$text)
+```
+
+# Now try to isolate the different witnesses in each row
+Because the transcripts only isolate one instance of indicating the witness as above, I create new columns to separate the text by witness chunk so that I can change the Q and A to the proper witness name. By using the next witness name as a boundary, I have to remove it before replacing the Q and A. Because I am relying on the original text column to create the further columns, I wait to change it last so that I can actually create the new columns first. I also have to rename THE WITNESS: to the witness name to identify them outside of examination. 
+
+```{r}
+#Create 5 new empty columns
+new_cols <- c("text1", "text2", "text3", "text4", "text5")
+plav_text[ , new_cols] <- NA
+
+# Column 10 -- "WITNESS: MIRSAD TOKACA" 
+plav_text$text1[24] <- stri_extract(regex="WITNESS: MIRSAD TOKACA.+ ?WITNESS: ADIL DRAGANOVIC", plav_text$text[24])
+plav_text$text1[24] <- gsub("WITNESS: ADIL DRAGANOVIC", "", plav_text$text1[24])
+plav_text$text1[24]
+plav_text$text1[24] <- gsub("Q\\. ", "MR. TIEGER: Q. ", plav_text$text1[24])
+plav_text$text1[24] <- gsub("A\\. ", "MIRSAD TOKACA: A. ", plav_text$text1[24])
+stri_extract_all(regex="THE WITNESS:", plav_text$text1[24])
+plav_text$text1[24] <- gsub("THE WITNESS:", "MIRSAD TOKACA:", plav_text$text1[24])
+
+# Column 11 -- "WITNESS: ADIL DRAGANOVIC"
+plav_text$text2[24] <- stri_extract(regex="WITNESS: ADIL DRAGANOVIC.+ ?WITNESS: TEUFIKA IBRAHIMEFENDIC", plav_text$text[24])
+plav_text$text2[24] <- gsub("WITNESS: TEUFIKA IBRAHIMEFENDIC", "", plav_text$text2[24])
+plav_text$text2[24]
+plav_text$text2[24] <- gsub("Q\\. ", "MR. HARMON: Q. ", plav_text$text2[24])
+plav_text$text2[24] <- gsub("A\\. ", "ADIL DRAGANOVIC: A. ", plav_text$text2[24])
+stri_extract(regex="THE WITNESS:", plav_text$text2[24])
+plav_text$text2[24] <- gsub("THE WITNESS:", "ADIL DRAGANOVIC:", plav_text$text2[24])
+
+# Column 12 -- "WITNESS: TEUFIKA IBRAHIMEFENDIC"
+plav_text$text3[24] <- stri_extract(regex="WITNESS: TEUFIKA IBRAHIMEFENDIC.+ ?WITNESS: ELIE WIESEL", plav_text$text[24])
+plav_text$text3[24] <- gsub("WITNESS: ELIE WIESEL", "", plav_text$text3[24])
+plav_text$text3[24]
+plav_text$text3[24] <- gsub("Q\\. ", "MR. HARMON: Q. ", plav_text$text3[24])
+plav_text$text3[24] <- gsub("A\\. ", "TEUFIKA IBRAHIMEFENDIC: A. ", plav_text$text3[24])
+stri_extract(regex="THE WITNESS:", plav_text$text3[24])
+plav_text$text3[24] <- gsub("THE WITNESS:", "TEUFIKA IBRAHIMEFENDIC:", plav_text$text3[24])
+
+# Column 13 -- "WITNESS: ELIE WIESEL" 
+plav_text$text4[24] <- stri_extract(regex="WITNESS: ELIE WIESEL.+ ?WITNESS: MILORAD DODIK", plav_text$text[24])
+plav_text$text4[24] <- gsub("WITNESS: MILORAD DODIK", "", plav_text$text4[24])
+plav_text$text4[24]
+plav_text$text4[24] <- gsub("Q\\. ", "MR. TIEGER: Q. ", plav_text$text4[24])
+plav_text$text4[24] <- gsub("A\\. ", "ELIE WIESEL: A. ", plav_text$text4[24])
+stri_extract_all(regex="THE WITNESS:", plav_text$text4[24])
+plav_text$text4[24] <- gsub("THE WITNESS:", "ELIE WIESEL:", plav_text$text4[24])
+
+# Column 14 -- "WITNESS: MILORAD DODIK" 
+plav_text$text5[24] <- stri_extract(regex="WITNESS: MILORAD DODIK.+", plav_text$text[24])
+plav_text$text5[24]
+plav_text$text5[24] <- gsub("Q\\. ", "MR. PAVICH: Q. ", plav_text$text5[24])
+plav_text$text5[24] <- gsub("A\\. ", "MILORAD DODIK: A. ", plav_text$text5[24])
+stri_extract_all(regex="THE WITNESS:", plav_text$text5[24])
+plav_text$text5[24] <- gsub("THE WITNESS:", "MILORAD DODIK:", plav_text$text5[24])
+
+# Column text -- Retaining until first witness interrogation
+# Column 10 -- "WITNESS: MIRSAD TOKACA" 
+plav_text$text[24] <- stri_extract(regex=".+ ?WITNESS: MIRSAD TOKACA", plav_text$text[24])
+plav_text$text[24] <- gsub("WITNESS: MIRSAD TOKACA", "", plav_text$text[24])
+plav_text$text[24]
+
+# Combine the text again with witnesses properly identified
+plav_text$text[24] <- paste(plav_text$text[24], plav_text$text1[24], plav_text$text2[24], plav_text$text3[24], plav_text$text4[24], plav_text$text5[25])
+```
+
+
+Now I need to do the same thing again for row 25
+```{r}
+stri_extract_all(regex="WITNESS:[:BLANK:]+[:upper:]+ [:upper:]+ ?[:upper:]{2,}", plav_text$text[25])
+```
+```{r}
+# Column 7 -- "WITNESS: MADELEINE ALBRIGHT" 
+plav_text$text1[25] <- stri_extract(regex="WITNESS: MADELEINE ALBRIGHT.+ ?WITNESS: CARL BILDT", plav_text$text[25])
+plav_text$text1[25] <- gsub("WITNESS: CARL BILDT", "", plav_text$text1[25])
+plav_text$text1[25] <- gsub("WITNESS: MADELEINE ALBRIGHT", "WITNESS: MADELEINE ALBRIGHT .", plav_text$text1[25])
+plav_text$text1[25]
+plav_text$text1[25] <- gsub("Q\\. ", "MR. HARMON: Q. ", plav_text$text1[25])
+plav_text$text1[25] <- gsub("A\\. ", "MADELEINE ALBRIGHT: A. ", plav_text$text1[25])
+stri_extract_all(regex="THE WITNESS:", plav_text$text1[25])
+plav_text$text1[25] <- gsub("THE WITNESS:", "MADELEINE ALBRIGHT:", plav_text$text1[25])
+
+# Column 8 -- "WITNESS: CARL BILDT"
+plav_text$text2[25] <- stri_extract(regex="WITNESS: CARL BILDT.+ ?WITNESS: ROBERT FROWICK", plav_text$text[25])
+plav_text$text2[25] <- gsub("WITNESS: ROBERT FROWICK", "", plav_text$text2[25])
+plav_text$text2[25]
+plav_text$text2[25] <- gsub("Q\\. ", "MR. PAVICH: Q. ", plav_text$text2[25])
+plav_text$text2[25] <- gsub("A\\. ", "CARL BILDT: A. ", plav_text$text2[25])
+stri_extract(regex="THE WITNESS:", plav_text$text2[25])
+plav_text$text2[25] <- gsub("THE WITNESS:", "CARL BILDT:", plav_text$text2[25])
+
+# Column 9 -- "WITNESS: ROBERT FROWICK"
+plav_text$text3[25] <- stri_extract(regex="WITNESS: ROBERT FROWICK.+ ?WITNESS: ALEXANDER LIONEL BORAINE", plav_text$text[25])
+plav_text$text3[25] <- gsub("WITNESS: ALEXANDER LIONEL BORAINE", "", plav_text$text3[25])
+plav_text$text3[25]
+plav_text$text3[25] <- gsub("Q\\. ", "MR. O'SULLIVAN: Q. ", plav_text$text3[25])
+plav_text$text3[25] <- gsub("A\\. ", "ROBERT FROWICK: A. ", plav_text$text3[25])
+stri_extract(regex="THE WITNESS:", plav_text$text3[25])
+plav_text$text3[25] <- gsub("THE WITNESS:", "ROBERT FROWICK:", plav_text$text3[25])
+
+# Column 10 -- "WITNESS: ALEXANDER LIONEL BORAINE" 
+plav_text$text4[25] <- stri_extract(regex="WITNESS: ALEXANDER LIONEL BORAINE.+", plav_text$text[25])
+plav_text$text4[25] <- gsub("WITNESS: ALEXANDER LIONEL BORAINE", "WITNESS: ALEXANDER LIONEL BORAINE .", plav_text$text4[25])
+plav_text$text4[25]
+plav_text$text4[25] <- gsub("Q\\. ", "MR. TIEGER: Q. ", plav_text$text4[25])
+plav_text$text4[25] <- gsub("A\\. ", "ALEXANDER LIONEL BORAINE: A. ", plav_text$text4[25])
+stri_extract_all(regex="THE WITNESS:", plav_text$text4[25])
+plav_text$text4[25] <- gsub("THE WITNESS:", "ALEXANDER LIONEL BORAINEL:", plav_text$text4[25])
+
+# Column text -- Retaining until first witness interrogation
+# Column 7 -- "WITNESS: MADELEINE ALBRIGHT" 
+plav_text$text[25] <- stri_extract(regex=".+ ?WITNESS: MADELEINE ALBRIGHT", plav_text$text[25])
+plav_text$text[25] <- gsub("WITNESS: MADELEINE ALBRIGHT", "", plav_text$text[25])
+plav_text$text[25]
+
+# Combine the text again with witnesses properly identified
+plav_text$text[25] <- paste(plav_text$text[25], plav_text$text1[25], plav_text$text2[25], plav_text$text3[25], plav_text$text4[25], plav_text$text5[25])
+```
+Now I can drop the extra columns I made and then add a new column to keep doc_ids intact as turning into a corpus will attach .1, .2 at the end of each file name
+
+```{r}
+plav_text <- plav_text %>% 
+  select(-(new_cols))
+
+# Regularize the file names
+plav_text$doc_id2 <- plav_text$doc_id
+```
+
+# Now I can do something I discovered only later after segmenting speakers but is easier to do ahead of creating the first corpus 
+```{r}
+# dplyr filter() to select the documents that have "THE ACCUSED:" in them without a name
+plav_text %>%  
+  filter(str_detect(text, "THE ACCUSED:")) %>%
+  select(doc_id2)%>%
+  distinct(doc_id2)
+
+# The three files in which THE ACCUSED: appears
+# Biljana_Plavsic_2001_01_11_Initial Appearance_IT-00-40-I.doc                    
+# Biljana_Plavsic_2002_11_14_Pre-Trial Conference_IT-00-39-and-40-PT.doc          
+# Biljana_Plavsic_2002_12_17_Sentencing Proceedings-Witness_IT-00-39-and-40-S.doc 
+
+# Look into those files, I can see the only one in which it isn't Plavsic is
+# the second one, in which you can even see that the speaker is indicated as
+# there are two ACCUSEDs in the session
+
+# So I want to change "THE ACCUSED:" to "THE ACCUSED PLAVSIC:" but first I will
+# change this last one to his full name 
+
+plav_text$text[plav_text$doc_id2 =="Biljana_Plavsic_2002_11_14_Pre-Trial Conference_IT-00-39-and-40-PT.doc"] <- gsub("THE ACCUSED:", "MOMCILO KRAJISNIK:", plav_text$text[plav_text$doc_id2 =="Biljana_Plavsic_2002_11_14_Pre-Trial Conference_IT-00-39-and-40-PT.doc"])
+
+# Now I'm going to just change the rest of THE ACCUSED: to plavsic to regularize
+plav_text$text <- gsub("THE ACCUSED:", "THE ACCUSED PLAVSIC:", plav_text$text)
+
+#And now that Plavsic is all under one speaker title, I change it to her full name
+plav_text$text <- gsub("THE ACCUSED PLAVSIC:", "BILJANA PLAVSIC:", plav_text$text)
+
+```
+
+
+```{r}
+# CREATE CORPUS -----------------------------------------------------------
+corp_biljana <- corpus(plav_text)
+
+summary(corp_biljana)
+```
+
+```{r}
+# SEPARATE SPEAKERS -------------------------------------------------------
+# new one:
+#pattern = "[:UPPER:]+ ([:alpha:]+ )?([:alpha:]+ )?[:UPPER:]+:|\\b[:UPPER:]{2,3}(\\.)? ([:alpha:]+ )?([:alpha:]+-[:alpha:]+)?([:alpha:]+ )?[:alpha:]+:"
+
+
+#Now to separate speakers w/ corpus_segment
+corpseg <- corpus_segment(corp_biljana, pattern = "[:UPPER:]+ ([:alpha:]+ )?([:alpha:]+ )?[:UPPER:]+:|\\b[:UPPER:]{2,3}(\\.)? ([:alpha:]+ )?([:alpha:]+ )?[:UPPER:]+:", 
+                          valuetype = "regex", case_insensitive = FALSE)
+
+# take a peek at the speaker-separated corpus
+summary(corpseg, 10)
+
+# rename pattern to speaker
+names(docvars(corpseg))[which(names(docvars(corpseg)) == "pattern")] <- "speaker"
+
+# check speaker name consistency
+sort(table(corpseg$speaker))
+
+# ok so MR.BRASHICH has 180 and MR. BRASICH 9 turns, they are the same person but the MR.BRASHICH is the correct spelling (had to review court documents)
+corpseg$speaker <- gsub("MR. BRASICH:", "MR. BRASHICH:", corpseg$speaker)
+
+# MS. de MAN and MS. DE MAN is a capitalization inconsistency
+corpseg$speaker <- gsub("MS. de MAN:", "MS. DE MAN:", corpseg$speaker)
+
+# check speaker name consistency
+sort(table(corpseg$speaker))
+
+```
+
