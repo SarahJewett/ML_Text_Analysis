@@ -1,0 +1,200 @@
+---
+title: "Collection and Pre-Processing"
+author: "Sarah Jewett"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## quanteda packages
+There is the primary quanteda package and then subsequent packages in the quanteda family. Download and load them:
+
+```{r}
+# install.packages("quanteda")
+# install.packages("quanteda.textmodels")
+# install.packages("quanteda.textstats")
+# install.packages("quanteda.textplots")
+
+library("quanteda")
+library("quanteda.textmodels")
+library("quanteda.textstats")
+library("quanteda.textplots")
+```
+But wait, there is one more quanteda package that *isn't* available on CRAN, so we need to download it using devtools:
+```{r}
+# install.packages("devtools") 
+# devtools::install_github("quanteda/quanteda.corpora")
+```
+
+## Loading Text Data
+There are two primary ways of loading data into R Studio. The first is data that is already part of a package:
+
+```{r}
+data("data_char_ukimmig2010")
+```
+
+And the second is by loading it from external files. This can be a csv, for instance, that has a column of text or a pdf or word document that is entirely text. Here we are going to load the twenty statements of guilt I mentioned in the slides:
+
+```{r}
+library(readtext)
+guilty <- readtext(paste0("/Users/sarahjewett/Library/Mobile Documents/com~apple~CloudDocs/UPENN/ML_Text_Analysis/Statements_Guilt/*.pdf"),
+                       docvarsfrom = "filenames", 
+                       dvsep = " ",
+                       docvarnames = c("first", "last"),
+                       ignore_missing_files = TRUE)
+```
+
+You can also scrape text from websites into R as part of loading text data but that can mean scraping a simple table from wikipedia to dynamic webscraping using RSelenium.I won't go into that here though, as that is a whole other beast and quite time consuming.
+
+Now, let's go through the workflow! Remember, raw chicken tastes disgusting, right? We already did the raw text import, so time to do the next three steps:
+
+## Create a Corpus
+
+```{r}
+
+guilty_corpus <- corpus(guilty)
+
+
+# You'll see the output provides you a snapshot and indicates 20 documents with 2 docvars
+guilty_corpus
+
+print(guilty_corpus)
+
+head(guilty_corpus) 
+
+# You can explore docvars with the docvars() function, but recall made these ourselves when importing the files when we used the 'docvarnames' argument with readtext()
+docvars(guilty_corpus)
+
+# summary() provides a better idea of what the texts look like in terms of types, tokens, sentences, along with our 2 docvars:
+summary(guilty_corpus)
+```
+
+We can reshape the corpus so that the unit of texts is by sentence, not document. You'll see we've gone from 20 documents to 638 documents.
+
+```{r}
+corp_sent <- corpus_reshape(guilty_corpus, to = "sentences")
+print(corp_sent)
+```
+You can also subset the corpus:
+
+```{r}
+corp_plavsic <- corpus_subset(guilty_corpus, last %in% "Plavsic")
+ndoc(corp_plavsic)
+print(corp_plavsic)
+```
+## Tokenize the corpus
+Let's go ahead and create a tokens object
+```{r}
+toks_guilty <- tokens(guilty_corpus)
+print(toks_guilty)
+
+# this just does a default removal of white spaces, so it retains EVERYTHING else -- numbers, punctuation.
+```
+You can see we've got a lot of punctuation and words like "the" and "of" which, depending on what you are looking at, can be superfluous. So we can remove these as part of the tokens() function if we don't need them:
+
+```{r}
+toks_guilty <- tokens(guilty_corpus, 
+                      remove_punct = TRUE, 
+                      remove_symbols = FALSE,
+                      remove_numbers = FALSE,)
+print(toks_guilty)
+```
+
+You can also stem:
+```{r}
+tokens_wordstem(toks_guilty)
+```
+
+If you want to remove stopwords as well, you can use the tokens_select() function:
+
+```{r}
+toks_nostop <- tokens_select(toks_guilty, pattern = stopwords("en"), selection = "remove")
+print(toks_nostop)
+```
+
+From the initial tokenization without any conditions, Plavsic's document went from 1200 features to 469.
+
+## Constructing a document-feature matrix
+Once you create a dfm, you are heading into a bag of words analysis. This means that you are looking at words regardless of the order they are in or the overall context of the sentence, paragraph, or document. 
+
+```{r}
+dfm_guilty <- dfm(toks_nostop)
+print(dfm_guilty)
+```
+
+```{r}
+head(docnames(dfm_guilty), 20)
+
+head(featnames(dfm_guilty), 20)
+```
+
+
+```{r}
+head(rowSums(dfm_guilty), 10)
+```
+
+```{r}
+topfeatures(dfm_guilty, 20)
+```
+
+I'll get into what we can do with proportions, such as tf-idf (term frequency-inverse document frequency) on Wednesday
+
+# Keyword-in-contexts (KWIC)
+
+If you are curious as to the occurrence of word/words in context of the texts you are going to analyze, the kwic() function is a really important tool. It allows you to set a window of words to gain some context (hence keyword-in-contexts!). You need a tokens object to use this function, so let's rewind back to step 3 in the workflow. It is best to use the earlier tokens object before removing stopwords as it may not make much sense!
+
+```{r}
+kw_sorry <- kwic(toks_guilty, pattern =  "sorry")
+kw_sorry
+head(kw_sorry, 10)
+```
+Looking at these, sincerity and sincere look like another route to go here.
+
+```{r}
+kw_sincere <- kwic(toks_guilty, pattern =  "sincer*")
+head(kw_sincere, 10)
+```
+Think about how stemming and lemmatization might apply here!
+
+'Feel' could be a good word to get a sense of what other emotions besides the one I may have decided to look at ahead of time:
+
+```{r}
+kw_feel <- kwic(toks_guilty, pattern =  "feel*", window = 4)
+kw_feel
+```
+Ok, so kwic() helped suss out some words related to what I am interested in analyzing here, namely, remorse. Remorse, however, is often used as an umbrella term in court contexts that captures guilt, regret, and shame, even though these are highly intertwined yet separate emotions. So let's create a dictionary, so that we can look at these statements and see the occurrences of these words. 
+
+## Creating a Dictionary
+
+```{r}
+remorse_dict <- dictionary(list(
+  remorse = c("remorse*"),
+  regret = c("regret*"),
+  guilt = c("guilt*"),
+  shame = c("shame*", "asham**"),
+  apology = c("apolog*", "forgiv", "sorrow*", "sorry" )))
+
+print(remorse_dict)
+```
+
+Now we can use the dictionary on our tokens object
+```{r}
+dict_toks <- tokens_lookup(toks_guilty, dictionary = remorse_dict)
+print(dict_toks)
+```
+
+Plavsic has the fewest occurrences of remorse words, just one instance of 'shame'. Let's see it in context:
+
+```{r}
+kwic(toks_guilty, pattern =  "shame", window = 10)
+
+# to see just Plavsic alone, we know she is the first document so we can use:
+# kwic(toks_guilty[1], pattern =  "shame", window = 10)
+```
+
+Interesting. It is a non-personal usage of shame, rather she is applying a lack of shame on others, rather than attributing the emotion of shame to herself as the others do. This is why quantitative text analysis requires human input! If this data set were made up of 1 million defendants, it would be easy to run this sort of analysis and say that she had a non-zero remorse score without checking. There is a balance! And that is where machine learning comes in, because going through these statements and labeling them as shame (self) versus shame (attributed to others) creates more nuance. Then you just hope that the machine (algorithm) accurately labels the training data!
+
+Let's now jump over the the Plavsic file in which I clean and prepare the transcripts.
+
+
