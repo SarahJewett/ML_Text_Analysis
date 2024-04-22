@@ -36,9 +36,13 @@ print(as.character(token_plav["Biljana_Plavsic_2001_01_11_Initial Appearance_IT-
 ```
 
 
+
 ## Cleaning the Texts
 
 Importing PDFs usually comes with lots of issues, like /n to indicate the end of a line. Or as you can see from the pdf, there are line numbers and headers/footers that read in for **every** page without concern for the text itself, which leads to sentences being split up. This isn't a big deal, except that in this case, I want to get rid of page numbers, but not all numbers in the corpus. I can use these line breaks to isolate out the line numbers. 
+
+There will be a lot of regex in the next few lines, I recommend this source alongside the cheat sheet in the repo: https://bookdown.org/rdpeng/rprogdatascience/regular-expressions.html
+
 ```{r, echo=FALSE}
 # rid of \n##
 plav_text$text <- gsub("\n[0-9]{2}", " ", plav_text$text)
